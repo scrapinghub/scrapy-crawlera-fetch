@@ -1,6 +1,4 @@
 import json
-import os
-from contextlib import contextmanager
 from unittest.mock import patch
 
 from scrapy import Request
@@ -8,19 +6,7 @@ from scrapy import Request
 from crawlera_fetch import DownloadSlotPolicy
 
 from tests.data.requests import get_test_requests
-from tests.utils import foo_spider, get_test_middleware, mocked_time
-
-
-@contextmanager
-def shub_jobkey_env_variable():
-    SHUB_JOBKEY_OLD = os.environ.get("SHUB_JOBKEY")
-    os.environ["SHUB_JOBKEY"] = "1/2/3"
-    try:
-        yield
-    finally:
-        del os.environ["SHUB_JOBKEY"]
-        if SHUB_JOBKEY_OLD:
-            os.environ["SHUB_JOBKEY"] = SHUB_JOBKEY_OLD
+from tests.utils import foo_spider, get_test_middleware, mocked_time, shub_jobkey_env_variable
 
 
 def test_process_request_disabled():

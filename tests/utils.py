@@ -1,5 +1,7 @@
-from urllib.parse import urlparse
+import os
+from contextlib import contextmanager
 from unittest.mock import Mock
+from urllib.parse import urlparse
 
 from scrapy import Spider
 from scrapy.utils.test import get_crawler
@@ -27,6 +29,9 @@ class FooSpider(Spider):
     def foo_callback(self, response):
         pass
 
+    def should_retry(self, response, request, spider):
+        return True
+
 
 foo_spider = FooSpider()
 
@@ -37,6 +42,7 @@ def get_test_middleware(settings=None):
 
     foo_spider = FooSpider()
     foo_spider.crawler = get_crawler(FooSpider, settings_dict=settings_dict)
+    foo_spider.crawler.spider = foo_spider
     foo_spider.crawler.engine = MockEngine()
 
     middleware = CrawleraFetchMiddleware.from_crawler(foo_spider.crawler)
@@ -46,3 +52,15 @@ def get_test_middleware(settings=None):
 
 
 mocked_time = Mock(return_value=1234567890.123)
+
+
+@contextmanager
+def shub_jobkey_env_variable():
+    SHUB_JOBKEY_OLD = os.environ.get("SHUB_JOBKEY")
+    os.environ["SHUB_JOBKEY"] = "1/2/3"
+    try:
+        yield
+    finally:
+        del os.environ["SHUB_JOBKEY"]
+        if SHUB_JOBKEY_OLD:
+            os.environ["SHUB_JOBKEY"] = SHUB_JOBKEY_OLD
