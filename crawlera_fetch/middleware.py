@@ -13,9 +13,10 @@ from scrapy.http.request import Request
 from scrapy.http.response import Response
 from scrapy.responsetypes import responsetypes
 from scrapy.settings import BaseSettings
+from scrapy.http import Headers
 from scrapy.spiders import Spider
 from scrapy.statscollectors import StatsCollector
-from scrapy.utils.reqser import request_from_dict, request_to_dict
+from scrapy.utils.request import request_from_dict
 from w3lib.http import basic_auth_header
 
 
@@ -59,17 +60,18 @@ class CrawleraFetchMiddleware:
 
     def _read_settings(self, spider: Spider) -> None:
         settings = spider.crawler.settings
-        if not settings.get("CRAWLERA_FETCH_APIKEY"):
+        apikey = getattr(spider, "crawlera_fetch_apikey", settings.get("CRAWLERA_FETCH_APIKEY"))
+        if not apikey:
             self.enabled = False
             logger.info("Crawlera Fetch API cannot be used without an apikey")
             return
 
-        self.apikey = settings["CRAWLERA_FETCH_APIKEY"]
-        self.apipass = settings.get("CRAWLERA_FETCH_APIPASS", "")
+        self.apikey = apikey
+        self.apipass = getattr(spider, "crawlera_fetch_apipass", settings.get("CRAWLERA_FETCH_APIPASS", ""))
         self.auth_header = basic_auth_header(self.apikey, self.apipass)
 
-        if settings.get("CRAWLERA_FETCH_URL"):
-            self.url = settings["CRAWLERA_FETCH_URL"]
+        if url := getattr(spider, "crawlera_fetch_url", settings.get("CRAWLERA_FETCH_URL")):
+            self.url = url
 
         self.download_slot_policy = settings.get(
             "CRAWLERA_FETCH_DOWNLOAD_SLOT_POLICY", DownloadSlotPolicy.Domain
@@ -129,9 +131,12 @@ class CrawleraFetchMiddleware:
         if shub_jobkey:
             self.default_args["job_id"] = shub_jobkey
 
+        body = {"url": request.url}
+
         # assemble JSON payload
         original_body_text = request.body.decode(request.encoding)
-        body = {"url": request.url, "body": original_body_text}
+        if original_body_text:
+            body["body"] = original_body_text
         if request.method != "GET":
             body["method"] = request.method
         body.update(self.default_args)
@@ -139,7 +144,7 @@ class CrawleraFetchMiddleware:
         body_json = json.dumps(body)
 
         additional_meta = {
-            "original_request": request_to_dict(request, spider=spider),
+            "original_request": request.to_dict(spider),
             "timing": {"start_ts": time.time()},
         }
         crawlera_meta.update(additional_meta)
@@ -250,23 +255,30 @@ class CrawleraFetchMiddleware:
             "headers": response.headers,
             "body": json_response,
         }
+        if not json_response.get("body"):
+            return response
         try:
             resp_body = base64.b64decode(json_response["body"], validate=True)
-        except (binascii.Error, ValueError):
+        except (binascii.Error, ValueError, TypeError):
             resp_body = json_response["body"]
-
+        if isinstance(json_response["headers"], dict):
+            headers = Headers(json_response["headers"])
+        else:
+            headers = Headers({x["name"]: x["value"] for x in json_response["headers"]})
+        headers.pop(b"Content-Encoding", None)
         respcls = responsetypes.from_args(
-            headers=json_response["headers"],
+            headers=headers,
             url=json_response["url"],
             body=resp_body,
         )
         return response.replace(
             cls=respcls,
             request=original_request,
-            headers=json_response["headers"],
+            headers=headers,
             url=json_response["url"],
             body=resp_body,
             status=original_status or 200,
+            encoding='utf-8'  # Need to test more
         )
 
     def _set_download_slot(self, request: Request, spider: Spider) -> None:
