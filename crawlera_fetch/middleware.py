@@ -144,7 +144,7 @@ class CrawleraFetchMiddleware:
         body_json = json.dumps(body)
 
         additional_meta = {
-            "original_request": request.to_dict(),
+            "original_request": request.to_dict(spider),
             "timing": {"start_ts": time.time()},
         }
         crawlera_meta.update(additional_meta)
